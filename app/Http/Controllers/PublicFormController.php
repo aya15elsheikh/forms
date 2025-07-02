@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Validator;
 class PublicFormController extends Controller
 {
 
-  public function index()
+    public function index()
     {
         $forms = Form::where('is_active', true)
             ->whereRaw('(opens_at IS NULL OR opens_at <= NOW())')
@@ -43,7 +43,7 @@ class PublicFormController extends Controller
         }
 
         $form->load('fields');
-        
+
         return response()->json([
             'success' => true,
             'data' => [
@@ -80,13 +80,12 @@ class PublicFormController extends Controller
 
         // Build validation rules dynamically
         $rules = [
-            'student_name' => 'required|string|max:255',
             'student_email' => 'required|email|max:255'
         ];
 
         foreach ($form->fields as $field) {
             $fieldRules = [];
-            
+
             if ($field->required) {
                 $fieldRules[] = 'required';
             } else {
@@ -104,12 +103,54 @@ class PublicFormController extends Controller
                     $fieldRules[] = 'date';
                     break;
                 case 'file':
-                    $fieldRules[] = 'file|max:2048'; // 2MB max
+                    $fieldRules[] = 'file|max:2048';
+                    break;
+                case 'text':
+                    $fieldRules[] = 'string|max:1000';
+                    break;
+                case 'textarea':
+                    $fieldRules[] = 'string|max:5000';
+                    break;
+                case 'select':
+                    if ($field->options) {
+                        $options = array_map('trim', $field->options);
+                        $fieldRules[] = 'in:' . implode(',', $options);
+                    }
+                    break;
+                case 'checkbox':
+                    if ($field->options) {
+                        $options = array_map('trim', $field->options);
+                        $fieldRules[] = 'array';
+                        $rules[$field->name . '.*'] = 'in:' . implode(',', $options);
+                    }
+                    break;
+                case 'date':
+                    $fieldRules[] = 'date';
                     break;
             }
 
             $rules[$field->name] = implode('|', $fieldRules);
         }
+
+        // if data field is file or  img save to storage
+
+        $formData = [];
+        foreach ($form->fields as $field) {
+            if (
+                ($field->type === 'file' || $field->type === 'image')
+                && $request->hasFile($field->name)
+            ) {
+                $file = $request->file($field->name);
+                $filename = time() . '_' . $file->getClientOriginalName();
+                $path = $file->storeAs('form_uploads', $filename, 'public');
+                $formData[$field->name] = [
+                    'path' => $path,
+                ];
+            } else {
+                $formData[$field->name] = $request->input($field->name);
+            }
+        }
+
 
         $validator = Validator::make($request->all(), $rules);
 
@@ -143,7 +184,6 @@ class PublicFormController extends Controller
 
         $submission = FormSubmission::create([
             'form_id' => $form->id,
-            'student_name' => $validatedData['student_name'],
             'student_email' => $validatedData['student_email'],
             'data' => $formData,
             'submitted_at' => now()
@@ -172,13 +212,25 @@ class PublicFormController extends Controller
             ], 404);
         }
 
+        //if a field is file return the right path
+        $formData = $submission->data;
+        foreach ($form->fields as $field) {
+            if (isset($formData[$field->name]) && is_array($formData[$field->name]) && isset($formData[$field->name]['path'])) {
+                $formData[$field->name]['url'] = asset('storage/' . $formData[$field->name]['path']);
+                //drop path
+                unset($formData[$field->name]['path']);
+                unset($formData[$field->name]['original_name']);
+                unset($formData[$field->name]['size']);
+                unset($formData[$field->name]['mime_type']);
+            }
+        }
+
         return response()->json([
             'success' => true,
             'data' => [
                 'id' => $submission->id,
-                'student_name' => $submission->student_name,
                 'student_email' => $submission->student_email,
-                'data' => $submission->data,
+                'form_data' => $formData,
                 'submitted_at' => $submission->submitted_at,
                 'form' => [
                     'id' => $form->id,

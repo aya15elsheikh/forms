@@ -120,6 +120,22 @@ class AdminFormController extends Controller
         $submissions = $form->submissions()
             ->latest()
             ->paginate(request('per_page', 20));
+
+            // if submsisson field is file return full url
+        $submissions->each(function ($submission) use ($form) {
+            $formData = $submission->data;          
+            foreach ($form->fields as $field) {
+                if (isset($formData[$field->name]) && is_array($formData[$field->name]) && isset($formData[$field->name]['path'])) {
+                    $formData[$field->name]['url'] = asset('storage/' . $formData[$field->name]['path']);
+                    // drop path
+                    unset($formData[$field->name]['path']);
+                    unset($formData[$field->name]['original_name']);
+                    unset($formData[$field->name]['size']);
+                    unset($formData[$field->name]['mime_type']);
+                }
+            }
+            $submission->data = $formData;
+        });
         
         return response()->json([
             'success' => true,
@@ -145,7 +161,6 @@ class AdminFormController extends Controller
                 'submissions' => $submissions->map(function ($submission) {
                     return [
                         'id' => $submission->id,
-                        'student_name' => $submission->student_name,
                         'student_email' => $submission->student_email,
                         'data' => $submission->data,
                         'submitted_at' => $submission->submitted_at,

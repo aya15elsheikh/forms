@@ -8,7 +8,6 @@ class FormSubmission extends Model
 {
        protected $fillable = [
         'form_id',
-        'student_name',
         'student_email',
         'data',
         'submitted_at'

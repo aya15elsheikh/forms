@@ -64,7 +64,7 @@ class FormFieldController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'label' => 'required|string|max:255',
-            'type' => 'required|in:text,email,number,textarea,select,radio,checkbox,file,date',
+            'type' => 'required|in:text,email,number,textarea,select,checkbox,file,date',
             'required' => 'boolean',
             'placeholder' => 'nullable|string',
             'help_text' => 'nullable|string',
