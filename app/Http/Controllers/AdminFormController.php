@@ -153,7 +153,23 @@ class AdminFormController extends Controller
     public function exportSubmissions(Form $form)
     {
         $submissions = $form->submissions()->with('form.fields')->get();
-        
+
+        // if submission field is file return full url
+        $submissions->each(function ($submission) use ($form) {
+            $formData = $submission->data;
+            foreach ($form->fields as $field) {
+                if (isset($formData[$field->name]) && is_array($formData[$field->name]) && isset($formData[$field->name]['path'])) {
+                    $formData[$field->name]['url'] = asset('storage/' . $formData[$field->name]['path']);
+                    // drop path
+                    unset($formData[$field->name]['path']);
+                    unset($formData[$field->name]['original_name']);
+                    unset($formData[$field->name]['size']);
+                    unset($formData[$field->name]['mime_type']);
+                }
+            }
+            $submission->data = $formData;
+        });
+
         return response()->json([
             'success' => true,
             'data' => [

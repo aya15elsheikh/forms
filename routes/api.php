@@ -38,6 +38,7 @@ Route::get('fields/{field}', [FormFieldController::class, 'show']);
 
 // Update a field
 Route::put('fields/{field}', [FormFieldController::class, 'update']);
+
 Route::patch('fields/{field}', [FormFieldController::class, 'update']);
 
 // Delete a field
