@@ -1,15 +1,24 @@
 <?php
 
 namespace App\Http\Controllers;
+
 use Illuminate\Http\Request;
-use App\Models\Form;    
+use App\Models\Form;
+use App\Models\FormSubmission;
 use Illuminate\Support\Facades\Validator;
+
+
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+
+
 class AdminFormController extends Controller
 {
     public function index()
     {
         $forms = Form::with(['fields', 'submissions'])->get();
-        
+
         return response()->json([
             'success' => true,
             'data' => $forms->map(function ($form) {
@@ -33,7 +42,7 @@ class AdminFormController extends Controller
     public function show(Form $form)
     {
         $form->load('fields');
-        
+
         return response()->json([
             'success' => true,
             'data' => [
@@ -108,7 +117,7 @@ class AdminFormController extends Controller
     public function destroy(Form $form)
     {
         $form->delete();
-        
+
         return response()->json([
             'success' => true,
             'message' => 'Form deleted successfully'
@@ -121,9 +130,9 @@ class AdminFormController extends Controller
             ->latest()
             ->paginate(request('per_page', 20));
 
-            // if submsisson field is file return full url
+        // if submsisson field is file return full url
         $submissions->each(function ($submission) use ($form) {
-            $formData = $submission->data;          
+            $formData = $submission->data;
             foreach ($form->fields as $field) {
                 if (isset($formData[$field->name]) && is_array($formData[$field->name]) && isset($formData[$field->name]['path'])) {
                     $formData[$field->name]['url'] = asset('storage/' . $formData[$field->name]['path']);
@@ -136,7 +145,7 @@ class AdminFormController extends Controller
             }
             $submission->data = $formData;
         });
-        
+
         return response()->json([
             'success' => true,
             'data' => [
@@ -184,5 +193,108 @@ class AdminFormController extends Controller
                 })
             ]
         ]);
+    }
+
+
+    public function exportSubmissionsExcel(Form $form)
+    {
+        $form->load('fields');
+        $submissions = $form->submissions()->get();
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+
+        $sheet->setCellValue('A1', 'Submission ID');
+        $sheet->setCellValue('B1', 'Student Name');
+        $sheet->setCellValue('C1', 'Student Email');
+
+        $colIndex = 4;
+        foreach ($form->fields as $field) {
+            $columnLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex);
+            $sheet->setCellValue($columnLetter . '1', $field->label);
+            $colIndex++;
+        }
+
+
+        $rowIndex = 2;
+        foreach ($submissions as $submission) {
+            $sheet->setCellValue("A{$rowIndex}", $submission->id);
+            $sheet->setCellValue("B{$rowIndex}", $submission->student_name);
+            $sheet->setCellValue("C{$rowIndex}", $submission->student_email);
+            $colIndex = 4;
+            foreach ($form->fields as $field) {
+                $value = $submission->data[$field->name] ?? '';
+
+                if (is_array($value)) {
+                    $value = implode(', ', $value);
+                } elseif (is_array(json_decode($value, true))) {
+                    $value = implode(', ', json_decode($value, true));
+                }
+                $columnLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex);
+                $sheet->setCellValue($columnLetter . $rowIndex, $value);
+                $colIndex++;
+            }
+
+            $rowIndex++;
+        }
+
+        if (ob_get_length()) ob_end_clean();
+
+        $writer = new Xlsx($spreadsheet);
+        return response()->streamDownload(function () use ($writer) {
+            $writer->save('php://output');
+        }, $form->title . '_submissions.xlsx', [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+
+
+    public function importSubmissionsExcel(Request $request, Form $form)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls',
+        ]);
+
+        try {
+            $form->load('fields');
+            $fieldMap = $form->fields->pluck('name', 'label'); // [label => name]
+
+            $file = $request->file('file');
+            $spreadsheet = IOFactory::load($file->getPathname());
+            $sheet = $spreadsheet->getActiveSheet();
+            $rows = $sheet->toArray();
+
+            $header = $rows[0];
+            $dataRows = array_slice($rows, 1);
+
+            foreach ($dataRows as $row) {
+                $rowData = array_combine($header, $row);
+
+                $submissionData = [];
+                foreach ($fieldMap as $label => $name) {
+                    $submissionData[$name] = $rowData[$label] ?? null;
+                }
+
+                FormSubmission::create([
+                    'form_id' => $form->id,
+                    'student_name' => $rowData['Student Name'] ?? 'Imported',
+                    'student_email' => $rowData['Student Email'] ?? 'noemail@example.com',
+                    'data' => $submissionData,
+                    'submitted_at' => now()
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Submissions imported successfully'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Import failed',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }

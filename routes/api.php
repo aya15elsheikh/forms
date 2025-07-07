@@ -63,3 +63,7 @@ Route::post('public/forms/{form}/submit', [PublicFormController::class, 'submit'
 
 // Get a single submission for a form (public)
 Route::get('public/forms/{form}/submissions/{submissionId}', [PublicFormController::class, 'getSubmission']);
+
+Route::post('forms/{form}/import-submissions', [AdminFormController::class, 'importSubmissionsExcel']);
+
+Route::get('forms/{form}/export-submissions', [AdminFormController::class, 'exportSubmissionsExcel']);

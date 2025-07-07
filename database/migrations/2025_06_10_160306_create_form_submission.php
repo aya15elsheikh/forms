@@ -14,7 +14,6 @@ return new class extends Migration
         Schema::create('form_submissions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('form_id')->constrained()->onDelete('cascade');
-            $table->string('student_name');
             $table->string('student_email');
             $table->json('data'); // Store all form data as JSON
             $table->timestamp('submitted_at');
